@@ -1,0 +1,93 @@
+Description: |
+  aws-logs-converter-s3-access
+  SAM template for running the aws-logs-converter for S3 Access Logs on EMR
+Parameters:
+  EmrScriptBucketUri:
+    Type: String
+    Description: S3 URI to EMR Job script
+  ApplicationId:
+    Type: String
+    Description: Application ID of EMR Serverless to run job
+  MyJobExecutionRoleARN:
+    Type: String
+    Description: IAM EMR Serverless execution role ARN
+  S3LogBucket:
+    Type: String
+    Description: Name of the S3 bucket containing the S3 access logs
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Resources:
+  EmrServerlessStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: aws-logs-converter-s3-access-trigger
+      DefinitionUri: statemachine.asl.json
+      DefinitionSubstitutions:
+        EmrScriptBucketUri: !Ref EmrScriptBucketUri
+        ApplicationId: !Ref ApplicationId
+        MyJobExecutionRoleARN: !Ref MyJobExecutionRoleARN
+        S3LogBucket: !Ref S3LogBucket
+      Role:
+        Fn::GetAtt:
+          - EmrServerlessStateMachineRole
+          - Arn
+  EmrServerlessStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: EmrServerlessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'emr-serverless:StartJobRun'
+                  - 'iam:PassRole'
+                Resource: '*'
+  EventBridgeInvokeStepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: InvokeStepFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'states:StartExecution'
+                Resource:
+                  - !GetAtt EmrServerlessStateMachine.Arn
+  EmrServerlessSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: aws-logs-converter-s3-access-trigger
+      Name: aws-logs-converter-s3-access-trigger
+      ScheduleExpression: 'cron(0 0 * * ? *)'
+      State: 'ENABLED'
+      Targets:
+        - Arn:
+            Fn::Sub: arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${EmrServerlessStateMachine}
+          Id: 'EmrServerlessStateMachineTarget'
+          RoleArn:
+            Fn::GetAtt:
+              - EventBridgeInvokeStepFunctionRole
+              - Arn
+
+Outputs:
+  EmrServerlessStateMachineArn:
+    Description: 'ARN of the State Machine'
+    Value:
+      Ref: EmrServerlessStateMachine

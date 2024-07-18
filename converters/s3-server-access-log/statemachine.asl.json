@@ -1,0 +1,25 @@
+{
+  "Comment": "aws-logs-converter for S3 Access Logs on EMR",
+  "StartAt": "Start EMR Job",
+  "States": {
+    "Start EMR Job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::emr-serverless:startJobRun",
+      "Parameters": {
+        "Name": "aws-logs-converter-s3-access",
+        "ApplicationId": "${ApplicationId}",
+        "ExecutionRoleArn": "${MyJobExecutionRoleARN}",
+        "JobDriver": {
+          "SparkSubmit": {
+            "EntryPoint": "${EmrScriptBucketUri}",
+            "EntryPointArguments": [
+              "--access-log-bucket",
+              "${S3LogBucket}"
+            ],
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
