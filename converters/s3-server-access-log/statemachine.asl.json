@@ -6,7 +6,7 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::emr-serverless:startJobRun",
       "Parameters": {
-        "Name": "aws-logs-converter-s3-access",
+        "Name.$": "States.Format('${JobName}-{}', $$.Execution.StartTime)",
         "ApplicationId": "${ApplicationId}",
         "ExecutionRoleArn": "${MyJobExecutionRoleARN}",
         "JobDriver": {
@@ -15,11 +15,63 @@
             "EntryPointArguments": [
               "--access-log-bucket",
               "${S3LogBucket}"
-            ],
+            ]
           }
         }
       },
-      "End": true
+      "ResultPath": "$.JobInfo",
+      "Next": "CheckJobStatus"
+    },
+    "CheckJobStatus": {
+      "Type": "Task",
+      "Parameters": {
+        "ApplicationId": "${ApplicationId}",
+        "JobRunId.$": "$.JobInfo.JobRunId"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:emrserverless:getJobRun",
+      "ResultPath": "$.JobStatus",
+      "Next": "IsJobComplete"
+    },
+    "IsJobComplete": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.JobStatus.JobRun.State",
+          "StringEquals": "SUCCESS",
+          "Next": "JobSucceeded"
+        },
+        {
+          "Or": [
+            {
+              "Variable": "$.JobStatus.JobRun.State",
+              "StringEquals": "FAILED"
+            },
+            {
+              "Variable": "$.JobStatus.JobRun.State",
+              "StringEquals": "CANCELLING"
+            },
+            {
+              "Variable": "$.JobStatus.JobRun.State",
+              "StringEquals": "CANCELLED"
+            }
+          ],
+          "Next": "JobFailed"
+        }
+      ],
+      "Default": "WaitForJob"
+    },
+    "WaitForJob": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckJobStatus"
+    },
+    "JobSucceeded": {
+      "Type": "Succeed"
+    },
+    "JobFailed": {
+      "Type": "Fail",
+      "Error": "JobFailed",
+      "Cause": "The EMR job failed."
     }
   }
 }

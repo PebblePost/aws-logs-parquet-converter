@@ -4,7 +4,7 @@ Description: |
 Parameters:
   EmrScriptBucketUri:
     Type: String
-    Description: S3 URI to EMR Job script
+    Description: S3 URI to EMR job script
   ApplicationId:
     Type: String
     Description: Application ID of EMR Serverless to run job
@@ -14,19 +14,28 @@ Parameters:
   S3LogBucket:
     Type: String
     Description: Name of the S3 bucket containing the S3 access logs
+  JobName:
+    Type: String
+    Description: Name of the state machine and emr job
+    Default: aws-logs-converter-s3-access
+  JonCronSchedule:
+    Type: String
+    Description: Schedule of job in CRON format
+    Default: '10 0 * * ? *'
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: 'AWS::Serverless-2016-10-31'
 Resources:
   EmrServerlessStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
-      Name: aws-logs-converter-s3-access-trigger
+      Name: !Ref JobName
       DefinitionUri: statemachine.asl.json
       DefinitionSubstitutions:
         EmrScriptBucketUri: !Ref EmrScriptBucketUri
         ApplicationId: !Ref ApplicationId
         MyJobExecutionRoleARN: !Ref MyJobExecutionRoleARN
         S3LogBucket: !Ref S3LogBucket
+        JobName: !Ref JobName
       Role:
         Fn::GetAtt:
           - EmrServerlessStateMachineRole
@@ -49,6 +58,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - 'emr-serverless:StartJobRun'
+                  - 'emr-serverless:GetJobRun'
                   - 'iam:PassRole'
                 Resource: '*'
   EventBridgeInvokeStepFunctionRole:
@@ -73,18 +83,20 @@ Resources:
   EmrServerlessSchedule:
     Type: AWS::Events::Rule
     Properties:
-      Description: aws-logs-converter-s3-access-trigger
-      Name: aws-logs-converter-s3-access-trigger
-      ScheduleExpression: 'cron(0 0 * * ? *)'
+      Description: !Ref JobName
+      Name: !Ref JobName
+      ScheduleExpression:
+        Fn::Sub: 'cron(${JonCronSchedule})'
       State: 'ENABLED'
       Targets:
         - Arn:
-            Fn::Sub: arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${EmrServerlessStateMachine}
+            Fn::Sub: arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${JobName}
           Id: 'EmrServerlessStateMachineTarget'
           RoleArn:
             Fn::GetAtt:
               - EventBridgeInvokeStepFunctionRole
               - Arn
+    DependsOn: EmrServerlessStateMachine
 
 Outputs:
   EmrServerlessStateMachineArn:
