@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import boto3
 from dateutil import parser
+from dateutil.parser import parse
 from pyspark.sql import Row
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import to_timestamp
@@ -35,7 +36,7 @@ def _get_aws_creds() -> dict:
     aws_dict = {
         "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
         "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
-        "region_name": os.getenv("AWS_SECRET_ACCESS_KEY", "us-east-1"),
+        "region_name": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
     }
     return aws_dict
 
@@ -242,6 +243,7 @@ class S3ServerSideLoggingRollup(object):
         destination_log_prefix,
         num_output_files,
         num_parallelize,
+        start_date,
     ) -> None:
         self._connect_to_s3()
         self._get_aws_account_id(aws_account_id)
@@ -256,6 +258,7 @@ class S3ServerSideLoggingRollup(object):
         self.destination_log_prefix = destination_log_prefix
         self.num_partitions = num_output_files
         self.num_parallelize = num_parallelize
+        self.start_date = start_date
 
     def _connect_to_s3(self) -> None:
         aws_cred_dict = _get_aws_creds()
@@ -283,16 +286,31 @@ class S3ServerSideLoggingRollup(object):
             return []
 
     def run(self) -> None:
-        buckets = self.get_list_of_folders()
         spark = _start_spark()
+        buckets = self.get_list_of_folders()
 
+        if self.start_date:
+            start_date = parse(self.start_date)
+            current_date = start_date
+            while current_date <= self.lookback_days:
+                self.compact(buckets=buckets, run_date=current_date, spark=spark)
+                current_date += timedelta(days=1)
+        else:
+            self.compact(buckets=buckets, run_date=self.lookback_days, spark=spark)
+
+        try:
+            spark.stop()
+        except Exception as e:
+            print(e)
+
+    def compact(self, buckets: List[Any], run_date, spark) -> None:
         for bucket in buckets:
             print(f"Processing {bucket}")
 
             s3_logs_paths = get_s3a_paths(
                 self.s3_client,
                 self.access_log_bucket,
-                "{}{}".format(bucket, self.lookback_days.strftime("%Y/%m/%d")),
+                "{}{}".format(bucket, run_date.strftime("%Y/%m/%d")),
             )
             if len(s3_logs_paths) > 0:
                 s3_path_rdd = spark.sparkContext.parallelize(
@@ -350,7 +368,7 @@ class S3ServerSideLoggingRollup(object):
                         logs_bucket=self.destination_log_bucket,
                         prefix=self.destination_log_prefix,
                         source_bucket=bucket,
-                        date=self.lookback_days.strftime("%Y/%m/%d"),
+                        date=run_date.strftime("%Y/%m/%d"),
                     )
                 )
 
@@ -364,11 +382,6 @@ class S3ServerSideLoggingRollup(object):
                 ).parquet(
                     destination
                 )
-
-        try:
-            spark.stop()
-        except Exception as e:
-            print(e)
 
 
 def parse_arguments() -> dict:
@@ -414,6 +427,11 @@ def parse_arguments() -> dict:
         default=100,
         type=int,
         help="Number of parallelize jobs to split into. Default: %(default)s",
+    )
+    params.add_argument(
+        "--start-date",
+        default=False,
+        help="Start date of backfill, if set will run in loop until caught up",
     )
 
     args = params.parse_args()
