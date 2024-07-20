@@ -390,6 +390,7 @@ def parse_arguments() -> dict:
     params.add_argument(
         "--aws-account-id",
         default=0,
+        type=int,
         help="The AWS Account ID of the logs. Will use caller identity if not set",
     )
     params.add_argument(
@@ -400,6 +401,7 @@ def parse_arguments() -> dict:
     params.add_argument(
         "--lookback-days",
         default=7,
+        type=int,
         help="Number of days in the past to run job on Default: %(default)s",
     )
     params.add_argument(
