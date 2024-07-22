@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 import re
@@ -33,6 +35,10 @@ S3_ACCESS_LOG_PATTERN = re.compile(
 
 
 def _get_aws_creds() -> dict:
+    """
+    Pull and return AWS creds from the env if exists.  This is primarily for local testing, EMR will use the IAM Role.
+    :return: aws_dict
+    """
     aws_dict = {
         "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID"),
         "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
@@ -42,6 +48,10 @@ def _get_aws_creds() -> dict:
 
 
 def _start_spark() -> "SparkSession":
+    """
+    Creates or returns a active Spark session
+    :return: SparkSession
+    """
     spark = (
         SparkSession.builder
         #
@@ -59,17 +69,28 @@ def _start_spark() -> "SparkSession":
     return spark
 
 
-def get_s3a_paths(s3_client, bucket, prefix):
-    print(bucket, prefix)
-    """ Mutate S3 object keys into a fully qualified s3a URI. """
+def get_s3a_paths(s3_client, bucket, prefix) -> List[str]:
+    """
+    Mutate S3 object keys into a fully qualified s3a URI
+    :param s3_client: internal boto s3 client
+    :param bucket: bucket name
+    :param prefix: prefix to search
+    :return: list of s3a URIs for each item
+    """
     return [
         "s3a://{}/{}".format(bucket, key)
         for key in list_bucket_with_prefix(s3_client, bucket, prefix)
     ]
 
 
-def list_bucket_with_prefix(s3_client, bucket, prefix):
-    """Paginated listing of contents within an S3 bucket prefix."""
+def list_bucket_with_prefix(s3_client, bucket, prefix) -> List[str]:
+    """
+    Paginated listing of contents within an S3 bucket prefix
+    :param s3_client: internal boto s3 client
+    :param bucket: bucket name
+    :param prefix: prefix to search
+    :return: list of items
+    """
     token = None
     more_keys = True
     keys = []
@@ -87,7 +108,13 @@ def list_bucket_with_prefix(s3_client, bucket, prefix):
     return keys
 
 
-def s3_read_file(aws_cred_dict, s3_path):
+def s3_read_file(aws_cred_dict, s3_path) -> List[Row]:
+    """
+    Given a s3 file, read each line and convert to PySpark row
+    :param aws_cred_dict: internal aws creds dict
+    :param s3_path: s3a path to file
+    :return: List of PySpark rows
+    """
     s3_client = boto3.client("s3", **aws_cred_dict)
     parse_result = urlparse(s3_path)
     bucket = parse_result.netloc
@@ -105,7 +132,12 @@ def s3_read_file(aws_cred_dict, s3_path):
     return rows
 
 
-def parse_s3_access_time(s):
+def parse_s3_access_time(s) -> datetime | None:
+    """
+    Parse and convert the s3 event timestamp
+    :param s: raw time string
+    :return: datetime or None
+    """
     try:
         s = s[s.find("[") + 1 : s.find(" ")]
         return parser.parse(s.replace(":", " ", 1))
@@ -113,8 +145,12 @@ def parse_s3_access_time(s):
         return None
 
 
-def parse_apache_log_line(logline):
-    """Given a log line, return a row containing the Apache Access Log info."""
+def parse_apache_log_line(logline) -> Row:
+    """
+    Given a log line, return a row containing the S3 Server Access Log
+    :param logline:
+    :return: Row
+    """
     match = S3_ACCESS_LOG_PATTERN.search(logline)
     if match is None:
         return Row(
@@ -261,10 +297,17 @@ class S3ServerSideLoggingRollup(object):
         self.start_date = start_date
 
     def _connect_to_s3(self) -> None:
+        """
+        Using internal credentials create a boto s3 client
+        """
         aws_cred_dict = _get_aws_creds()
         self.s3_client = boto3.client("s3", **aws_cred_dict)
 
     def _get_aws_account_id(self, aws_account_id: int) -> None:
+        """
+        Returned provided AWS Account ID or attempt to use STS to get from execution environment
+        :param aws_account_id: account id passed in cli args
+        """
         if aws_account_id == 0:
             aws_cred_dict = _get_aws_creds()
             sts_client = boto3.client("sts", **aws_cred_dict)
@@ -273,7 +316,11 @@ class S3ServerSideLoggingRollup(object):
         else:
             self.aws_account_id = aws_account_id
 
-    def get_list_of_folders(self) -> List[Any]:
+    def get_list_of_folders(self) -> List[str]:
+        """
+        Return a list of folders using date-based partitioning.
+        :return: list of folders
+        """
         prefix = "{}/{}/".format(self.aws_account_id, self.aws_region)
         result = self.s3_client.list_objects_v2(
             Bucket=self.access_log_bucket, Prefix=prefix, Delimiter="/"
@@ -286,10 +333,14 @@ class S3ServerSideLoggingRollup(object):
             return []
 
     def run(self) -> None:
+        """
+        Execute compaction job for a single date or backfill
+        """
         spark = _start_spark()
         buckets = self.get_list_of_folders()
 
         if self.start_date:
+            # If doing backfill iterate each day starting from start_date until the normal lookback_day
             start_date = parse(self.start_date)
             current_date = start_date
             while current_date <= self.lookback_days:
@@ -304,8 +355,14 @@ class S3ServerSideLoggingRollup(object):
             print(e)
 
     def compact(self, buckets: List[Any], run_date, spark) -> None:
+        """
+        Read, parse, and compact S3 server access logs using PySpark and EMR
+        :param buckets: List of buckets/folders to compact
+        :param run_date: Date string to run on
+        :param spark: Spark client
+        """
         for bucket in buckets:
-            print(f"Processing {bucket}")
+            print(f"Processing {bucket} for date {run_date.strftime('%Y/%m/%d')}")
 
             s3_logs_paths = get_s3a_paths(
                 self.s3_client,
@@ -332,6 +389,7 @@ class S3ServerSideLoggingRollup(object):
                         format="yyyy-MM-dd'T'HH:mm:ss",
                     ),
                 )
+                # can be adjusted to remove unwanted columns
                 access_logs_df = access_logs_df.select(
                     "bucket_owner",
                     "s3_bucket",
@@ -372,9 +430,7 @@ class S3ServerSideLoggingRollup(object):
                     )
                 )
 
-                # Hotfix: Sorting issue.
-                # 1. Repartition to ensure we create our desired number of Parquet files.
-                # 2. Sort, solely within each partition, to at least get row groups sorted within Parquet.
+                # repartition into specific number of files and sort
                 access_logs_df.repartition(self.num_partitions).sortWithinPartitions(
                     sort_keys
                 ).write.mode("overwrite").option("compression", "snappy").partitionBy(
@@ -400,7 +456,7 @@ def parse_arguments() -> dict:
     )
     params.add_argument(
         "--lookback-days",
-        default=7,
+        default=1,
         type=int,
         help="Number of days in the past to run job on Default: %(default)s",
     )

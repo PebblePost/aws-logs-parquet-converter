@@ -1,6 +1,8 @@
 # Support other types of EMR
 # Bootstrap cluster option?
-# Final cleanup of scripts
+
 # Example Athena scripts
-# Backfill cleanup
-#   Need to add better logging
+
+
+
+# add support for tagging

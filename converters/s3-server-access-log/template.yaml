@@ -22,6 +22,16 @@ Parameters:
     Type: String
     Description: Schedule of job in CRON format
     Default: '10 0 * * ? *'
+  EnableAlerting:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: Enable or disable alerting for the job
+Conditions:
+  IsEnableAlerting: !Equals [!Ref EnableAlerting, "true"]
+
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: 'AWS::Serverless-2016-10-31'
 Resources:
@@ -40,6 +50,12 @@ Resources:
         Fn::GetAtt:
           - EmrServerlessStateMachineRole
           - Arn
+      Logging:
+        Level: !If [IsEnableAlerting, "ALL", !Ref "AWS::NoValue"]
+        IncludeExecutionData: !If [IsEnableAlerting, true, !Ref "AWS::NoValue"]
+        Destinations:
+          - !If [IsEnableAlerting, {"CloudWatchLogsLogGroup": {"LogGroupArn": !GetAtt EmrServerlessLogGroup.Arn}}, !Ref "AWS::NoValue"]
+
   EmrServerlessStateMachineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -61,6 +77,20 @@ Resources:
                   - 'emr-serverless:GetJobRun'
                   - 'iam:PassRole'
                 Resource: '*'
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogDelivery"
+                  - "logs:CreateLogStream"
+                  - "logs:GetLogDelivery"
+                  - "logs:UpdateLogDelivery"
+                  - "logs:DeleteLogDelivery"
+                  - "logs:ListLogDeliveries"
+                  - "logs:PutLogEvents"
+                  - "logs:PutResourcePolicy"
+                  - "logs:DescribeResourcePolicies"
+                  - "logs:DescribeLogGroups"
+                Resource: "*"
+
   EventBridgeInvokeStepFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -80,6 +110,7 @@ Resources:
                 Action: 'states:StartExecution'
                 Resource:
                   - !GetAtt EmrServerlessStateMachine.Arn
+
   EmrServerlessSchedule:
     Type: AWS::Events::Rule
     Properties:
@@ -98,8 +129,53 @@ Resources:
               - Arn
     DependsOn: EmrServerlessStateMachine
 
+  EmrServerlessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsEnableAlerting
+    Properties:
+      LogGroupName: !Sub /aws/job/${JobName}
+      RetentionInDays: 14
+
+  EmrJobFailureMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Condition: IsEnableAlerting
+    Properties:
+      LogGroupName: !Ref EmrServerlessLogGroup
+      FilterPattern: '"FAIL"'
+      MetricTransformations:
+        - MetricValue: "1"
+          MetricNamespace: "StepFunctionMetrics"
+          MetricName: "EmrJobFailures"
+
+  EmrJobFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsEnableAlerting
+    Properties:
+      AlarmDescription: !Sub "Alarm if the EMR job ${JobName} fails"
+      Namespace: "StepFunctionMetrics"
+      MetricName: "EmrJobFailures"
+      Statistic: "Sum"
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      AlarmActions:
+        - !Ref SNSAlarmTopic  # SNS topic ARN for notifications
+
+  SNSAlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: IsEnableAlerting
+    Properties:
+      DisplayName: !Sub "Step Function Failure Alarm - ${JobName}"
+
 Outputs:
   EmrServerlessStateMachineArn:
-    Description: 'ARN of the State Machine'
+    Description: 'ARN of the Job State Machine'
     Value:
       Ref: EmrServerlessStateMachine
+
+  SNSAlarmTopic:
+    Description: 'ARN of the SNS Alert Topic, add your own subscriptions'
+    Condition: IsEnableAlerting
+    Value:
+      Ref: SNSAlarmTopic
