@@ -278,6 +278,7 @@ class S3ServerSideLoggingRollup(object):
         destination_log_bucket,
         destination_log_prefix,
         num_output_files,
+        hive_formatted_folders,
         num_parallelize,
         start_date,
     ) -> None:
@@ -292,6 +293,7 @@ class S3ServerSideLoggingRollup(object):
             else destination_log_bucket
         )
         self.destination_log_prefix = destination_log_prefix
+        self.hive_formatted_folders = hive_formatted_folders
         self.num_partitions = num_output_files
         self.num_parallelize = num_parallelize
         self.start_date = start_date
@@ -421,12 +423,17 @@ class S3ServerSideLoggingRollup(object):
                 )
                 sort_keys = ["request_time"]
                 partition_columns_names = []
+
+                if self.hive_formatted_folders:
+                    date_format = "year=%Y/month=%m/day=%d"
+                else:
+                    date_format = "%Y/%m/%d"
                 destination = (
                     "s3a://{logs_bucket}/{prefix}/{source_bucket}{date}".format(
                         logs_bucket=self.destination_log_bucket,
                         prefix=self.destination_log_prefix,
                         source_bucket=bucket,
-                        date=run_date.strftime("%Y/%m/%d"),
+                        date=run_date.strftime(date_format),
                     )
                 )
 
@@ -479,6 +486,12 @@ def parse_arguments() -> dict:
         default=10,
         type=int,
         help="Number of output files. Default: %(default)s",
+    )
+    params.add_argument(
+        "--hive-formatted-folders",
+        type=bool,
+        default=False,
+        help="Structure output folders in Hive format for easier query with Athena. Default: %(default)s",
     )
     params.add_argument(
         "--num-parallelize",
