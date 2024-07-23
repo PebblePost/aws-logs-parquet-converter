@@ -21,7 +21,7 @@ Parameters:
   JonCronSchedule:
     Type: String
     Description: Schedule of job in CRON format
-    Default: '10 0 * * ? *'
+    Default: '0 12 * * ? *'
   EnableAlerting:
     Type: String
     AllowedValues:
