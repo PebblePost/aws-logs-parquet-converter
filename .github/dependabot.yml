@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: daily
+      time: "10:00"
+      timezone: America/New_York
+    groups:
+      python-packages:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "andysnowden"

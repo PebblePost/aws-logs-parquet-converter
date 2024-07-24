@@ -192,45 +192,29 @@ def parse_apache_log_line(logline) -> Row:
         operation=match.group("operation"),
         key=None if match.group("key") == "-" else match.group("key"),
         request=match.group("request"),
-        http_status=None
-        if match.group("status") == "-"
-        else int(match.group("status")),
+        http_status=None if match.group("status") == "-" else int(match.group("status")),
         error_code=None if match.group("error") == "-" else match.group("error"),
         bytes_sent=None if match.group("bytes") == "-" else int(match.group("bytes")),
         object_size=None if match.group("size") == "-" else int(match.group("size")),
-        total_time=None
-        if match.group("totaltime") == "-"
-        else int(match.group("totaltime")),
-        turn_around_time=None
-        if match.group("turnaround") == "-"
-        else int(match.group("turnaround")),
+        total_time=None if match.group("totaltime") == "-" else int(match.group("totaltime")),
+        turn_around_time=(
+            None if match.group("turnaround") == "-" else int(match.group("turnaround"))
+        ),
         referrer=None if match.group("referrer") == '"-"' else match.group("referrer"),
-        user_agent=None
-        if match.group("useragent") == '"-"'
-        else match.group("useragent"),
+        user_agent=None if match.group("useragent") == '"-"' else match.group("useragent"),
         version_id=None if match.group("version") == "-" else match.group("version"),
         host_id=None if match.group("host_id") == "-" else match.group("host_id"),
-        signature_version=None
-        if match.group("signature_version") == "-"
-        else match.group("signature_version"),
-        cipher_suite=None
-        if match.group("cipher_suite") == "-"
-        else match.group("cipher_suite"),
-        authentication_type=None
-        if match.group("auth_type") == "-"
-        else match.group("auth_type"),
-        host_header=None
-        if match.group("host_header") == "-"
-        else match.group("host_header"),
-        tls_version=None
-        if match.group("tls_version") == "-"
-        else match.group("tls_version"),
-        access_point_arn=None
-        if match.group("access_point_arn") == "-"
-        else match.group("access_point_arn"),
-        acl_required=None
-        if match.group("acl_required") == "-"
-        else match.group("acl_required"),
+        signature_version=(
+            None if match.group("signature_version") == "-" else match.group("signature_version")
+        ),
+        cipher_suite=None if match.group("cipher_suite") == "-" else match.group("cipher_suite"),
+        authentication_type=None if match.group("auth_type") == "-" else match.group("auth_type"),
+        host_header=None if match.group("host_header") == "-" else match.group("host_header"),
+        tls_version=None if match.group("tls_version") == "-" else match.group("tls_version"),
+        access_point_arn=(
+            None if match.group("access_point_arn") == "-" else match.group("access_point_arn")
+        ),
+        acl_required=None if match.group("acl_required") == "-" else match.group("acl_required"),
         error_line=None,
     )
 
@@ -288,9 +272,7 @@ class S3ServerSideLoggingRollup(object):
         self.aws_region = aws_region
         self.access_log_bucket = access_log_bucket
         self.destination_log_bucket = (
-            access_log_bucket
-            if destination_log_bucket == "same"
-            else destination_log_bucket
+            access_log_bucket if destination_log_bucket == "same" else destination_log_bucket
         )
         self.destination_log_prefix = destination_log_prefix
         self.hive_formatted_folders = hive_formatted_folders
@@ -331,8 +313,8 @@ class S3ServerSideLoggingRollup(object):
         if "CommonPrefixes" in result:
             folders = [prefix["Prefix"] for prefix in result["CommonPrefixes"]]
             return folders
-        else:
-            return []
+
+        return []
 
     def run(self) -> None:
         """
@@ -378,9 +360,7 @@ class S3ServerSideLoggingRollup(object):
                 contents_rdd = s3_path_rdd.flatMap(
                     lambda s3_path: s3_read_file(_get_aws_creds(), s3_path)
                 )
-                access_logs_df = spark.createDataFrame(
-                    contents_rdd, S3_ACCESS_LOG_OUTPUT_SCHEMA
-                )
+                access_logs_df = spark.createDataFrame(contents_rdd, S3_ACCESS_LOG_OUTPUT_SCHEMA)
                 spark.sparkContext.setJobDescription("s3_access_log_rollup")
 
                 # The following patches request_time into a proper timestamp.
@@ -428,13 +408,11 @@ class S3ServerSideLoggingRollup(object):
                     date_format = "year=%Y/month=%m/day=%d"
                 else:
                     date_format = "%Y/%m/%d"
-                destination = (
-                    "s3a://{logs_bucket}/{prefix}/{source_bucket}{date}".format(
-                        logs_bucket=self.destination_log_bucket,
-                        prefix=self.destination_log_prefix,
-                        source_bucket=bucket,
-                        date=run_date.strftime(date_format),
-                    )
+                destination = "s3a://{logs_bucket}/{prefix}/{source_bucket}{date}".format(
+                    logs_bucket=self.destination_log_bucket,
+                    prefix=self.destination_log_prefix,
+                    source_bucket=bucket,
+                    date=run_date.strftime(date_format),
                 )
 
                 # repartition into specific number of files and sort
@@ -448,6 +426,10 @@ class S3ServerSideLoggingRollup(object):
 
 
 def parse_arguments() -> dict:
+    """
+    Parse command line arguments and set common sense defaults
+    :return: args dict
+    """
     params = argparse.ArgumentParser()
 
     params.add_argument(
