@@ -4,10 +4,11 @@ import argparse
 import os
 import re
 from datetime import datetime, timedelta
-from typing import List, Any
+from typing import List, Any, Optional
 from urllib.parse import urlparse
 
 import boto3
+from botocore.exceptions import ClientError
 from dateutil import parser
 from dateutil.parser import parse
 from pyspark.sql import Row
@@ -69,7 +70,7 @@ def _start_spark() -> "SparkSession":
     return spark
 
 
-def get_s3a_paths(s3_client, bucket, prefix) -> List[str]:
+def get_s3a_paths(s3_client: boto3.client, bucket: str, prefix: str) -> List[str]:
     """
     Mutate S3 object keys into a fully qualified s3a URI
     :param s3_client: internal boto s3 client
@@ -83,7 +84,7 @@ def get_s3a_paths(s3_client, bucket, prefix) -> List[str]:
     ]
 
 
-def list_bucket_with_prefix(s3_client, bucket, prefix) -> List[str]:
+def list_bucket_with_prefix(s3_client: boto3.client, bucket: str, prefix: str) -> List[str]:
     """
     Paginated listing of contents within an S3 bucket prefix
     :param s3_client: internal boto s3 client
@@ -101,10 +102,19 @@ def list_bucket_with_prefix(s3_client, bucket, prefix) -> List[str]:
         }
         if token is not None:
             kwargs["ContinuationToken"] = token
-        response = s3_client.list_objects_v2(**kwargs)
+
+        try:
+            response = s3_client.list_objects_v2(**kwargs)
+        except ClientError as e:
+            print(f"Error listing complete S3 objects: {e}")
+            break
+
+        # Safely access 'Contents' and handle cases where it's not present
+        contents = response.get("Contents", [])
+        keys.extend([content["Key"] for content in contents])
+
         token = response.get("NextContinuationToken", None)
         more_keys = token is not None
-        keys.extend([content["Key"] for content in response["Contents"]])
     return keys
 
 
@@ -252,20 +262,34 @@ S3_ACCESS_LOG_OUTPUT_SCHEMA = StructType(
 )
 
 
-class S3ServerSideLoggingRollup(object):
+class S3ServerSideLoggingRollup:
     def __init__(
         self,
-        aws_account_id,
-        lookback_days,
-        aws_region,
-        access_log_bucket,
-        destination_log_bucket,
-        destination_log_prefix,
-        num_output_files,
-        hive_formatted_folders,
-        num_parallelize,
-        start_date,
+        aws_account_id: Optional[int],
+        lookback_days: int,
+        aws_region: str,
+        access_log_bucket: str,
+        destination_log_bucket: str,
+        destination_log_prefix: str,
+        num_output_files: int,
+        hive_formatted_folders: bool,
+        num_parallelize: int,
+        start_date: Optional[str] = None,
     ) -> None:
+        """
+        Initialize S3ServerSideLoggingRollup instance.
+
+        :param aws_account_id: AWS Account ID or 0 to retrieve from STS.
+        :param lookback_days: Number of days to look back for logs.
+        :param aws_region: AWS region where the buckets are located.
+        :param access_log_bucket: Bucket containing access logs.
+        :param destination_log_bucket: Bucket to store processed logs. Use 'same' to use access_log_bucket.
+        :param destination_log_prefix: Prefix for destination log files.
+        :param num_output_files: Number of output files.
+        :param hive_formatted_folders: Whether to format folders in Hive style.
+        :param num_parallelize: Number of parallel processes.
+        :param start_date: Optional start date for processing.
+        """
         self._connect_to_s3()
         self._get_aws_account_id(aws_account_id)
         self.lookback_days = datetime.today() - timedelta(days=lookback_days)
@@ -282,23 +306,36 @@ class S3ServerSideLoggingRollup(object):
 
     def _connect_to_s3(self) -> None:
         """
-        Using internal credentials create a boto s3 client
+        Create a boto3 S3 client using internal credentials.
         """
-        aws_cred_dict = _get_aws_creds()
-        self.s3_client = boto3.client("s3", **aws_cred_dict)
-
-    def _get_aws_account_id(self, aws_account_id: int) -> None:
-        """
-        Returned provided AWS Account ID or attempt to use STS to get from execution environment
-        :param aws_account_id: account id passed in cli args
-        """
-        if aws_account_id == 0:
+        try:
             aws_cred_dict = _get_aws_creds()
-            sts_client = boto3.client("sts", **aws_cred_dict)
-            response = sts_client.get_caller_identity()
-            self.aws_account_id = response["Account"]
-        else:
-            self.aws_account_id = aws_account_id
+            self.s3_client = boto3.client("s3", **aws_cred_dict)
+        except Exception as e:
+            # Handle exceptions related to S3 client creation
+            # TODO this should be fatal?
+            print(f"Error connecting to S3: {e}")
+            raise
+
+    def _get_aws_account_id(self, aws_account_id: Optional[int]) -> None:
+        """
+        Retrieve AWS Account ID from the STS client if not provided.
+
+        :param aws_account_id: Account ID passed in CLI args or 0 to retrieve from STS.
+        """
+        try:
+            if aws_account_id == 0:
+                aws_cred_dict = _get_aws_creds()
+                sts_client = boto3.client("sts", **aws_cred_dict)
+                response = sts_client.get_caller_identity()
+                self.aws_account_id = response["Account"]
+            else:
+                self.aws_account_id = aws_account_id
+        except Exception as e:
+            # Handle exceptions related to STS or account ID retrieval
+            # TODO this should be fatal?
+            print(f"Error getting AWS account ID: {e}")
+            raise
 
     def get_list_of_folders(self) -> List[str]:
         """
@@ -306,15 +343,18 @@ class S3ServerSideLoggingRollup(object):
         :return: list of folders
         """
         prefix = "{}/{}/".format(self.aws_account_id, self.aws_region)
-        result = self.s3_client.list_objects_v2(
-            Bucket=self.access_log_bucket, Prefix=prefix, Delimiter="/"
-        )
-
-        if "CommonPrefixes" in result:
-            folders = [prefix["Prefix"] for prefix in result["CommonPrefixes"]]
-            return folders
-
-        return []
+        try:
+            result = self.s3_client.list_objects_v2(
+                Bucket=self.access_log_bucket, Prefix=prefix, Delimiter="/"
+            )
+            if "CommonPrefixes" in result:
+                folders = [prefix["Prefix"] for prefix in result["CommonPrefixes"]]
+                return folders
+            return []
+        except Exception as e:
+            # Handle exceptions related to S3 list_objects_v2
+            print(f"Error listing S3 folders: {e}")
+            return []
 
     def run(self) -> None:
         """

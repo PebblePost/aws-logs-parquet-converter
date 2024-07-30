@@ -1,6 +1,12 @@
+[project]
+name = "aws-logs-parquet-converter"
+description = ""
+license = { text = "MIT" }
+requires-python = ">=3.8"
+
 [tool.black]
 line-length = 100
-target-version = ['py37']
+target-version = ['py38']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -19,3 +25,12 @@ exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[tool.pytest.ini_options]
+minversion = "2.0"
+addopts = "-rfEX -p pytester --strict-markers"
+python_files = [
+    "test_*.py",
+    "*_test.py",
+    "testing/python/*.py",
+]

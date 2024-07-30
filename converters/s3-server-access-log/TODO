@@ -4,3 +4,6 @@
 # Example Athena scripts
 
 
+# decide how to handle boto failures
+#   Should some pass but print?
+#   Should we fail the EMR job?
