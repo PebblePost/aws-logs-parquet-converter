@@ -1,0 +1,181 @@
+Description: |
+  aws-logs-converter-s3-access
+  SAM template for running the aws-logs-converter for S3 Access Logs on EMR
+Parameters:
+  EmrScriptBucketUri:
+    Type: String
+    Description: S3 URI to EMR job script
+  ApplicationId:
+    Type: String
+    Description: Application ID of EMR Serverless to run job
+  MyJobExecutionRoleARN:
+    Type: String
+    Description: IAM EMR Serverless execution role ARN
+  S3LogBucket:
+    Type: String
+    Description: Name of the S3 bucket containing the S3 access logs
+  JobName:
+    Type: String
+    Description: Name of the state machine and emr job
+    Default: aws-logs-converter-s3-access
+  JonCronSchedule:
+    Type: String
+    Description: Schedule of job in CRON format
+    Default: '0 12 * * ? *'
+  EnableAlerting:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: Enable or disable alerting for the job
+Conditions:
+  IsEnableAlerting: !Equals [!Ref EnableAlerting, "true"]
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Resources:
+  EmrServerlessStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Ref JobName
+      DefinitionUri: statemachine.asl.json
+      DefinitionSubstitutions:
+        EmrScriptBucketUri: !Ref EmrScriptBucketUri
+        ApplicationId: !Ref ApplicationId
+        MyJobExecutionRoleARN: !Ref MyJobExecutionRoleARN
+        S3LogBucket: !Ref S3LogBucket
+        JobName: !Ref JobName
+      Role:
+        Fn::GetAtt:
+          - EmrServerlessStateMachineRole
+          - Arn
+      Logging:
+        Level: !If [IsEnableAlerting, "ALL", !Ref "AWS::NoValue"]
+        IncludeExecutionData: !If [IsEnableAlerting, true, !Ref "AWS::NoValue"]
+        Destinations:
+          - !If [IsEnableAlerting, {"CloudWatchLogsLogGroup": {"LogGroupArn": !GetAtt EmrServerlessLogGroup.Arn}}, !Ref "AWS::NoValue"]
+
+  EmrServerlessStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: EmrServerlessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'emr-serverless:StartJobRun'
+                  - 'emr-serverless:GetJobRun'
+                  - 'iam:PassRole'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogDelivery"
+                  - "logs:CreateLogStream"
+                  - "logs:GetLogDelivery"
+                  - "logs:UpdateLogDelivery"
+                  - "logs:DeleteLogDelivery"
+                  - "logs:ListLogDeliveries"
+                  - "logs:PutLogEvents"
+                  - "logs:PutResourcePolicy"
+                  - "logs:DescribeResourcePolicies"
+                  - "logs:DescribeLogGroups"
+                Resource: "*"
+
+  EventBridgeInvokeStepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: InvokeStepFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'states:StartExecution'
+                Resource:
+                  - !GetAtt EmrServerlessStateMachine.Arn
+
+  EmrServerlessSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Ref JobName
+      Name: !Ref JobName
+      ScheduleExpression:
+        Fn::Sub: 'cron(${JonCronSchedule})'
+      State: 'ENABLED'
+      Targets:
+        - Arn:
+            Fn::Sub: arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${JobName}
+          Id: 'EmrServerlessStateMachineTarget'
+          RoleArn:
+            Fn::GetAtt:
+              - EventBridgeInvokeStepFunctionRole
+              - Arn
+    DependsOn: EmrServerlessStateMachine
+
+  EmrServerlessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsEnableAlerting
+    Properties:
+      LogGroupName: !Sub /aws/job/${JobName}
+      RetentionInDays: 14
+
+  EmrJobFailureMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Condition: IsEnableAlerting
+    Properties:
+      LogGroupName: !Ref EmrServerlessLogGroup
+      FilterPattern: '"FAIL"'
+      MetricTransformations:
+        - MetricValue: "1"
+          MetricNamespace: "StepFunctionMetrics"
+          MetricName: "EmrJobFailures"
+
+  EmrJobFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsEnableAlerting
+    Properties:
+      AlarmDescription: !Sub "Alarm if the EMR job ${JobName} fails"
+      Namespace: "StepFunctionMetrics"
+      MetricName: "EmrJobFailures"
+      Statistic: "Sum"
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: "GreaterThanOrEqualToThreshold"
+      AlarmActions:
+        - !Ref SNSAlarmTopic  # SNS topic ARN for notifications
+
+  SNSAlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: IsEnableAlerting
+    Properties:
+      DisplayName: !Sub "Step Function Failure Alarm - ${JobName}"
+
+Outputs:
+  EmrServerlessStateMachineArn:
+    Description: 'ARN of the Job State Machine'
+    Value:
+      Ref: EmrServerlessStateMachine
+
+  SNSAlarmTopic:
+    Description: 'ARN of the SNS Alert Topic, add your own subscriptions'
+    Condition: IsEnableAlerting
+    Value:
+      Ref: SNSAlarmTopic

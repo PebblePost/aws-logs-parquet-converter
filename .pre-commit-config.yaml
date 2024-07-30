@@ -1,0 +1,36 @@
+repos:
+-   repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+    - id: black
+      language_version: python3
+      # Make commit one-step, bypasses need to restage black's changes.
+      # So this hook has to work in pre-commit mode, not pre-push.
+      entry: bash -c 'black "$@" && git add -u' --
+
+
+-   repo: https://github.com/pre-commit/pre-commit-hooks.git
+    rev: v4.6.0
+    hooks:
+    -   id: check-added-large-files
+        args: ['--maxkb=1000']
+    -   id: check-ast
+    -   id: check-case-conflict
+    -   id: check-docstring-first
+    -   id: check-executables-have-shebangs
+    -   id: check-shebang-scripts-are-executable
+    -   id: check-json
+    -   id: check-merge-conflict
+    -   id: check-symlinks
+    -   id: check-vcs-permalinks
+    -   id: check-yaml
+    -   id: debug-statements
+    -   id: detect-aws-credentials
+    -   id: detect-private-key
+    -   id: end-of-file-fixer
+    -   id: fix-byte-order-marker
+    -   id: mixed-line-ending
+    -   id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch','develop']
+    -   id: requirements-txt-fixer
+    -   id: trailing-whitespace
