@@ -1,7 +1,11 @@
 <h1 align="center">AWS Logs Parquet Converter</h1>
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green">
+<a href="https://codecov.io/gh/PebblePost/aws-logs-parquet-converter" >
+ <img src="https://codecov.io/gh/PebblePost/aws-logs-parquet-converter/graph/badge.svg?token=7I206HCMC5"/>
+ </a>
 </p>
+
 
 ## Overview
 This repository contains a collection of PySpark scripts designed to convert AWS logs (VPC, S3, ALB) into a more valuable and storage-dense format. Many organizations use AWS logs to audit and understand their platform's usage but often face challenges with the cost and scale of the data generated. These scripts help parse, compress, and reformat the data to reduce both raw storage costs and query costs when using tools like AWS Athena.
@@ -28,4 +32,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 For any questions or support, please open an issue or create a PR!
 
 ## Final Note
-There are many different ways to tackle these problems.  At PebblePost we decided to turn to PySpark and Parquet as they are common place in our environment.  We hope that by sharing these scripts we can save other DevOps team time and money. 
+There are many different ways to tackle these problems.  At PebblePost we decided to turn to PySpark and Parquet as they are common place in our environment.  We hope that by sharing these scripts we can save other DevOps team time and money.
