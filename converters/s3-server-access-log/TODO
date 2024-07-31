@@ -1,9 +1,3 @@
 # Support other types of EMR
 # Bootstrap cluster option?
-
 # Example Athena scripts
-
-
-# decide how to handle boto failures
-#   Should some pass but print?
-#   Should we fail the EMR job?

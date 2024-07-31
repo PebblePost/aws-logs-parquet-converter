@@ -86,7 +86,7 @@ class TestNonClassFunctions(unittest.TestCase):
 
     @pytest.mark.skip(reason="works but actually starts a session, remove to test changes")
     def test_start_spark(self):
-
+        # Test function for starting a configured spark session
         spark = None
         try:
             spark = _start_spark()
@@ -145,6 +145,7 @@ class TestNonClassFunctions(unittest.TestCase):
 
     @patch("s3_server_access_logs.boto3.client")
     def test_list_bucket_with_client_error(self, mock_boto_client):
+        # Test function with aws/boto exception
         mock_s3_client = mock_boto_client.return_value
         mock_s3_client.list_objects_v2.side_effect = ClientError(
             {"Error": {"Code": "NoSuchBucket", "Message": "The specified bucket does not exist."}},
@@ -161,7 +162,7 @@ class TestNonClassFunctions(unittest.TestCase):
         bucket = "test-bucket"
         prefix = "test-prefix"
 
-        # Create bucket and upload test objects
+        # Create bucket and "upload" test objects
         s3_client.create_bucket(Bucket=bucket)
         s3_client.put_object(Bucket=bucket, Key=f"{prefix}/file1.txt", Body=b"content\ncontent2")
         aws_cred_dict = {
@@ -181,7 +182,7 @@ class TestNonClassFunctions(unittest.TestCase):
         bucket = "test-bucket"
         prefix = "test-prefix"
 
-        # Create bucket and upload test objects
+        # Create bucket and "upload" test objects
         s3_client.create_bucket(Bucket=bucket)
         s3_client.put_object(
             Bucket=bucket,
@@ -331,7 +332,7 @@ class TestS3ServerSideLoggingRollup(unittest.TestCase):
         mock_boto_client.side_effect = Exception("S3 connection failed")
 
         with self.assertRaises(Exception) as context:
-            rollup = S3ServerSideLoggingRollup(
+            S3ServerSideLoggingRollup(
                 aws_account_id=123456789012,
                 lookback_days=7,
                 aws_region="us-east-1",
@@ -528,7 +529,6 @@ class TestS3ServerSideLoggingRollup(unittest.TestCase):
         mock_spark = MagicMock()
         mock_start_spark.return_value = mock_spark
         mock_get_list_of_folders.return_value = ["123456789012/us-east-1/folder1/"]
-        start_date = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
 
         rollup = S3ServerSideLoggingRollup(
             aws_account_id=123456789012,
@@ -551,6 +551,7 @@ class TestS3ServerSideLoggingRollup(unittest.TestCase):
 
 
 # TODO get tests for compact working
+# Happy to accept contributions here!
 # @patch("boto3.client")
 # @patch('s3_server_access_logs.get_s3a_paths')
 # @patch('s3_server_access_logs.s3_read_file')
