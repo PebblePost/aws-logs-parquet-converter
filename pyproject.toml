@@ -1,6 +1,12 @@
+[project]
+name = "aws-logs-parquet-converter"
+description = ""
+license = { text = "MIT" }
+requires-python = ">=3.8"
+
 [tool.black]
 line-length = 100
-target-version = ['py37']
+target-version = ['py38']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -19,3 +25,48 @@ exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[tool.pytest.ini_options]
+minversion = "2.0"
+addopts = "-rfEX -p pytester --strict-markers"
+python_files = [
+    "test_*.py",
+    "*_test.py",
+    "testing/python/*.py",
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "../converters"
+]
+omit = [
+    "*test*"
+]
+
+[tool.coverage.report]
+# Regexes for lines to exclude from consideration
+exclude_also = [
+    # Don't complain about missing debug-only code:
+    "def __repr__",
+    "if self\\.debug",
+
+    # Don't complain if tests don't hit defensive assertion code:
+    "raise AssertionError",
+    "raise NotImplementedError",
+
+    # Don't complain if non-runnable code isn't run:
+    "if 0:",
+    "if __name__ == .__main__.:",
+
+    # Ignore contiune
+    "contiune",
+
+    # Don't complain about abstract methods, they aren't run:
+    "@(abc\\.)?abstractmethod",
+]
+omit = [
+    "*test*"
+]
+skip_empty = true
+ignore_errors = true
