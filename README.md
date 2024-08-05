@@ -32,4 +32,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 For any questions or support, please open an issue or create a PR!
 
 ## Final Note
-There are many different ways to tackle these problems.  At PebblePost we decided to turn to PySpark and Parquet as they are common place in our environment.  We hope that by sharing these scripts we can save other DevOps team time and money.
+There are many different ways to tackle these problems.  At PebblePost we decided to turn to PySpark and Parquet as they are common place in our environment.  We hope that by sharing these scripts we can save other DevOps teams time and money.
