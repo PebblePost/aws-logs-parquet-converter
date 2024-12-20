@@ -1,7 +1,7 @@
-boto3==1.35.84
-botocore==1.35.84
+boto3==1.35.85
+botocore==1.35.85
 moto~=5.0.24
-pyspark==3.5.3
+pyspark==3.5.4
 
 
 pytest~=8.3.4
