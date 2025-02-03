@@ -1,6 +1,6 @@
-boto3==1.36.10
-botocore==1.36.10
-moto~=5.0.27
+boto3==1.36.11
+botocore==1.36.11
+moto~=5.0.28
 pyspark==3.5.4
 
 
