@@ -7,4 +7,4 @@ pyspark==4.1.0
 pytest~=9.0.2
 pytest-cov~=7.0.0
 python-dateutil==2.9.0.post0
-urllib3==2.6.2
+urllib3==2.6.3
