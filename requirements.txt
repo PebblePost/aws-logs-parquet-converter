@@ -1,5 +1,5 @@
-boto3==1.43.94
-botocore==1.43.94
+boto3==1.43.97
+botocore==1.43.97
 moto~=5.2.3
 pyspark==4.2.0
 
@@ -7,4 +7,4 @@ pyspark==4.2.0
 pytest~=9.1.1
 pytest-cov~=7.1.0
 python-dateutil==2.9.0.post0
-urllib3==2.7.0
+urllib3==2.8.0
